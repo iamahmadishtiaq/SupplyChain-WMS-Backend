@@ -12,57 +12,64 @@ use Exception;
 
 class PurchaseOrderController extends Controller
 {
-    public function __construct(protected GoodsReceivingService $receivingService)
-    {
-    }
+    public function __construct(protected GoodsReceivingService $receivingService) {}
 
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'supplier_id' => ['required', 'exists:suppliers,id'],
-            'warehouse_id' => ['required', 'exists:warehouse,id'],
+            'warehouse_id' => ['required', 'exists:warehouses,id'],
             'order_date' => ['required', 'date'],
-            'expected_deleivery_date' => ['nullable', 'date', 'after_or_equal:order_date'],
+            'expected_delivery_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_variant_id' => ['required', 'exists:product_variants,id'],
             'items.*.quantity_ordered' => ['required', 'integer', 'min:1'],
-            'item.*.unit_cost' => ['required', 'numeric', 'min:0'],
-            'notes' => ['nullable', 'string', 'max:1000'],
+            'items.*.unit_cost' => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        // Calculate subtotal safely
         $subtotal = 0;
+        $processedItems = [];
+
         foreach ($validated['items'] as $item) {
-            $subtotal += ($item['quantity_ordered'] * $item['unit_cost']);
+            $variant = \App\Models\ProductVariant::find($item['product_variant_id']);
+            $cost = isset($item['unit_cost']) ? (float) $item['unit_cost'] : (float) ($variant->cost_price ?? 0);
+            $qty = (int) $item['quantity_ordered'];
+
+            $itemSubtotal = $qty * $cost;
+            $subtotal += $itemSubtotal;
+
+            $processedItems[] = [
+                'product_variant_id' => $variant->id,
+                'quantity_ordered' => $qty,
+                'quantity_received' => 0,
+                'unit_cost' => $cost,
+                'subtotal' => $itemSubtotal,
+            ];
         }
 
         $po = PurchaseOrder::create([
             'supplier_id' => $validated['supplier_id'],
             'warehouse_id' => $validated['warehouse_id'],
             'created_by' => $request->user()->id,
-            'po_number' => 'PO-' . now()->format('Ym') . '-' . strtoupper(Str::random(4)),
+            'po_number' => 'PO-' . now()->format('Ym') . '-' . strtoupper(\Illuminate\Support\Str::random(4)),
             'status' => 'draft',
             'order_date' => $validated['order_date'],
-            'expected_deleivery_date' => $validated['expected_deleivery_date'] ?? null,
+            'expected_delivery_date' => $validated['expected_delivery_date'] ?? null,
             'subtotal' => $subtotal,
             'tax_amount' => 0.00,
-            'shipping_cost' => 0.00,
             'total_amount' => $subtotal,
             'notes' => $validated['notes'] ?? null,
         ]);
 
-        foreach ($validated['items'] as $item) {
-            $po->items()->create([
-                'product_variant_id' => $item['product_variant_id'],
-                'quantity_ordered' => $item['quantity_ordered'],
-                'quantity_received' => 0,
-                'unit_cost' => $item['unit_cost'],
-                'subtotal' => $item['quantity_ordered'] * $item['unit_cost'],
-            ]);
+        foreach ($processedItems as $itemData) {
+            $po->items()->create($itemData);
         }
-        
+
         return response()->json([
-            'message' => 'Purchase order created successfully',
-            'data' => $po->load('items.variant'),
+            'message' => 'Purchase order created successfully.',
+            'data' => $po->load(['items.variant', 'supplier', 'warehouse']),
         ], 201);
     }
 
