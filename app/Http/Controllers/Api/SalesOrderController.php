@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\Customer;
 use App\Models\ProductVariant;
 use App\Models\SalesOrder;
+use App\Services\OrderFulfillmentService;
 use App\Services\StockAllocationService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -14,7 +15,7 @@ use Illuminate\Support\Str;
 
 class SalesOrderController extends Controller
 {
-    public function __construct(protected StockAllocationService $allocationService)
+    public function __construct(protected StockAllocationService $allocationService, protected OrderFulfillmentService $fulfillmentService)
     {
     }
 
@@ -75,6 +76,23 @@ class SalesOrderController extends Controller
                 'data' => $allocatedOrder,
             ]);
         }catch (Exception $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    // New method add
+    public function dispatchOrder(Request $request, SalesOrder $salesOrder): JsonResponse
+    {
+        try{
+            $dispatchOrder = $this->fulfillmentService->dispatchOrder($salesOrder, $request->user());
+
+            return response()->json([
+                'message' => 'Order dispatched successfully. Stock permanently deducted and invoice queued.',
+                'data' => $dispatchOrder,
+            ]);
+        }catch(Exception $e) {
             return response()->json([
                 'error' => $e->getMessage(),
             ], 422);

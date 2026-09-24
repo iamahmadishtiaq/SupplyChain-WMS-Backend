@@ -4,11 +4,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\SalesOrderController;
+use App\Http\Controllers\Api\AuthController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Public Route
+Route::post('login', [AuthController::class, 'login']);
 
 ROute::middleware('auth:sanctum')->group(function () {
     Route::post('purchase-orders', [PurchaseOrderController::class, 'store']);
@@ -16,4 +19,7 @@ ROute::middleware('auth:sanctum')->group(function () {
 
     Route::post('sales-orders', [SalesOrderController::class, 'store']);
     Route::post('sales-orders/{salesOrder}/allocate', [SalesOrderController::class, 'allocateStock']);
+    Route::post('sales-orders/{salesOrder}/dispatch', [SalesOrderController::class, 'dispatchOrder']);
+
+    Route::post('logout', [AuthController::class, 'logout']);
 });
