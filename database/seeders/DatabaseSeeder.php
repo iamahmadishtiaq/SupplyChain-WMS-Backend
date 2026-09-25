@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderItem;
+use App\Models\StockAdjustment;
 use App\Models\StockBatch;
 use App\Models\StockMovement;
 use App\Models\Supplier;
@@ -19,53 +20,36 @@ use App\Models\Warehouse;
 use App\Models\Zone;
 use App\Services\SkuGeneratorService;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-
+        // 1. Setup Roles, Permissions, & The 3 Users
         $this->call(RoleAndPermissionSeeder::class);
-        
-        // 1. Core Users
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@wms.test'],
-            [
-                'name' => 'Super Logistics Admin',
-                'password' => Hash::make('password123'),
-                'email_verified_at' => now(),
-            ]
-        );
 
-        $operator = User::firstOrCreate(
-            ['email' => 'operator@wms.test'],
-            [
-                'name' => 'Warehouse Operator',
-                'password' => Hash::make('password123'),
-                'email_verified_at' => now(),
-            ]
-        );
+        $admin = User::where('email', 'admin@wms.test')->first();
+        $manager = User::where('email', 'manager@wms.test')->first();
+        $operator = User::where('email', 'operator@wms.test')->first();
 
-        // 2. Warehouses, Zones, & Specific Bins
+        // 2. Warehouses, Zones, & Locations
         $warehouses = Warehouse::factory(2)->create();
         $allLocations = collect();
 
         foreach ($warehouses as $warehouse) {
-            $ambientZone = Zone::create([
-                'warehouse_id' => $warehouse->id,
-                'name' => 'Ambient Storage Zone',
-                'code' => 'ZN-AMB',
-            ]);
+            $zones = [
+                ['name' => 'Ambient Storage Zone', 'code' => 'ZN-AMB'],
+                ['name' => 'Cold Chain Vault', 'code' => 'ZN-COLD'],
+            ];
 
-            $coldZone = Zone::create([
-                'warehouse_id' => $warehouse->id,
-                'name' => 'Cold Chain Vault',
-                'code' => 'ZN-COLD',
-            ]);
+            foreach ($zones as $zoneData) {
+                $zone = Zone::create([
+                    'warehouse_id' => $warehouse->id,
+                    'name' => $zoneData['name'],
+                    'code' => $zoneData['code'],
+                ]);
 
-            foreach ([$ambientZone, $coldZone] as $zone) {
                 for ($aisle = 1; $aisle <= 2; $aisle++) {
                     for ($rack = 1; $rack <= 2; $rack++) {
                         $allLocations->push(Location::create([
@@ -87,7 +71,7 @@ class DatabaseSeeder extends Seeder
         $suppliers = Supplier::factory(4)->create();
         $customers = Customer::factory(6)->create();
 
-        // 4. Categories, Products, and Variants
+        // 4. Categories, Products, & Variants
         $categories = Category::factory(3)->create();
         $allVariants = collect();
 
@@ -110,7 +94,7 @@ class DatabaseSeeder extends Seeder
                         'barcode' => fake()->unique()->ean13(),
                         'color' => $color,
                         'size' => 'Standard',
-                        'weight_kg' => fake()->randomFloat(2, 0.4, 3.5),
+                        'weight_kg' => fake()->randomFloat(2, 0.5, 3.0),
                         'cost_price' => 5000.00,
                         'selling_price' => 8500.00,
                         'reorder_level' => 20,
@@ -120,21 +104,24 @@ class DatabaseSeeder extends Seeder
             }
         }
 
-        // 5. Inbound Purchase Order & Active Batches
+        // 5. Inbound PO & Active Stock Batches
         $primaryWarehouse = $warehouses->first();
         $primarySupplier = $suppliers->first();
 
         $po = PurchaseOrder::create([
             'supplier_id' => $primarySupplier->id,
             'warehouse_id' => $primaryWarehouse->id,
-            'created_by' => $admin->id,
+            'created_by' => $manager->id,
             'po_number' => 'PO-' . now()->format('Ym') . '-0001',
             'status' => 'received',
             'order_date' => now()->subDays(5)->toDateString(),
             'expected_delivery_date' => now()->subDays(2)->toDateString(),
             'subtotal' => 500000.00,
+            'tax_amount' => 0.00,
             'total_amount' => 500000.00,
         ]);
+
+        $createdBatches = collect();
 
         foreach ($allVariants->take(4) as $index => $variant) {
             PurchaseOrderItem::create([
@@ -146,12 +133,11 @@ class DatabaseSeeder extends Seeder
                 'subtotal' => 100 * $variant->cost_price,
             ]);
 
-            // Har variant ka batch bana kar location par rakhein
-            $batchLocation = $allLocations[$index % $allLocations->count()];
+            $batchLoc = $allLocations[$index % $allLocations->count()];
 
             $batch = StockBatch::create([
                 'product_variant_id' => $variant->id,
-                'location_id' => $batchLocation->id,
+                'location_id' => $batchLoc->id,
                 'batch_number' => 'BTH-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
                 'quantity_received' => 100,
                 'quantity_on_hand' => 100,
@@ -161,7 +147,8 @@ class DatabaseSeeder extends Seeder
                 'expires_at' => now()->addYear()->toDateString(),
             ]);
 
-            // Ledger entry
+            $createdBatches->push($batch);
+
             StockMovement::create([
                 'stock_batch_id' => $batch->id,
                 'user_id' => $operator->id,
@@ -170,7 +157,7 @@ class DatabaseSeeder extends Seeder
                 'quantity_before' => 0,
                 'quantity_after' => 100,
                 'source_location_id' => null,
-                'destination_location_id' => $batchLocation->id,
+                'destination_location_id' => $batchLoc->id,
                 'reference_type' => PurchaseOrder::class,
                 'reference_id' => $po->id,
                 'reason' => "Initial PO receiving for #{$po->po_number}",
@@ -178,15 +165,17 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // 6. Outbound Sales Order (Pending)
+        // 6. Outbound Sales Order (Pending Allocation)
         $primaryCustomer = $customers->first();
         $so = SalesOrder::create([
             'customer_id' => $primaryCustomer->id,
             'warehouse_id' => $primaryWarehouse->id,
-            'created_by' => $admin->id,
+            'created_by' => $manager->id,
             'order_number' => 'SO-' . now()->format('Ym') . '-0001',
             'status' => 'pending',
             'subtotal' => 85000.00,
+            'tax_amount' => 0.00,
+            'shipping_fee' => 0.00,
             'total_amount' => 85000.00,
         ]);
 
@@ -198,5 +187,22 @@ class DatabaseSeeder extends Seeder
             'unit_price' => 8500.00,
             'subtotal' => 85000.00,
         ]);
+
+        // 7. Initial Seeded Stock Adjustment Record
+        $sampleBatch = $createdBatches->first();
+        if ($sampleBatch) {
+            StockAdjustment::create([
+                'stock_batch_id' => $sampleBatch->id,
+                'user_id' => $manager->id,
+                'type' => 'write_off',
+                'quantity_before' => 100,
+                'quantity_adjusted' => -2,
+                'quantity_after' => 98,
+                'financial_impact' => -10000.00,
+                'reason' => 'Quality check scrap sample',
+            ]);
+
+            $sampleBatch->update(['quantity_on_hand' => 98]);
+        }
     }
 }

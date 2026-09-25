@@ -4,17 +4,19 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 class RoleAndPermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        // Reset cached roles and permissions
-        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        // Permission cache clear karein
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Permissions define karein
+        // 1. Tamam System Permissions
         $permissions = [
             'view-inventory',
             'transfer-stock',
@@ -23,18 +25,19 @@ class RoleAndPermissionSeeder extends Seeder
             'create-sales-order',
             'allocate-stock',
             'dispatch-order',
+            'adjust-stock',
         ];
 
-        foreach ($permissions as $permission) {
-            Permission::firstOrCreate(['name' => $permission]);
+        foreach ($permissions as $perm) {
+            Permission::firstOrCreate(['name' => $perm]);
         }
 
-        // Roles create karein
+        // 2. Roles Create Karein
         $adminRole = Role::firstOrCreate(['name' => 'super-admin']);
         $managerRole = Role::firstOrCreate(['name' => 'warehouse-manager']);
         $operatorRole = Role::firstOrCreate(['name' => 'warehouse-operator']);
 
-        // Permissions assign karein
+        // 3. Permissions Map Karein
         $adminRole->syncPermissions(Permission::all());
 
         $managerRole->syncPermissions([
@@ -44,6 +47,7 @@ class RoleAndPermissionSeeder extends Seeder
             'receive-goods',
             'create-sales-order',
             'allocate-stock',
+            'adjust-stock',
         ]);
 
         $operatorRole->syncPermissions([
@@ -53,15 +57,35 @@ class RoleAndPermissionSeeder extends Seeder
             'dispatch-order',
         ]);
 
-        // Default users ko roles assign karein
-        $adminUser = User::where('email', 'admin@wms.test')->first();
-        if ($adminUser) {
-            $adminUser->assignRole($adminRole);
-        }
+        // 4. Teeno Test Users Create Karein Aur Roles Assign Karein
+        $admin = User::firstOrCreate(
+            ['email' => 'admin@wms.test'],
+            [
+                'name' => 'Super Logistics Admin',
+                'password' => Hash::make('password123'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $admin->syncRoles([$adminRole]);
 
-        $operatorUser = User::where('email', 'operator@wms.test')->first();
-        if ($operatorUser) {
-            $operatorUser->assignRole($operatorRole);
-        }
+        $manager = User::firstOrCreate(
+            ['email' => 'manager@wms.test'],
+            [
+                'name' => 'Warehouse Manager',
+                'password' => Hash::make('password123'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $manager->syncRoles([$managerRole]);
+
+        $operator = User::firstOrCreate(
+            ['email' => 'operator@wms.test'],
+            [
+                'name' => 'Warehouse Floor Operator',
+                'password' => Hash::make('password123'),
+                'email_verified_at' => now(),
+            ]
+        );
+        $operator->syncRoles([$operatorRole]);
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\StockTransferController;
+use App\Http\Controllers\Api\StockAdjustmentController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -36,6 +37,10 @@ ROute::middleware('auth:sanctum')->group(function () {
     });
     Route::middleware('permission:transfer-stock')->group(function () {
         Route::post('inventory/transfer', [StockTransferController::class, 'transfer']);
+    });
+
+    Route::middleware('permission:adjust-stock')->group(function () {
+        Route::post('inventory/adjust', [StockAdjustmentController::class, 'store']);
     });
 
     Route::post('logout', [AuthController::class, 'logout']);
