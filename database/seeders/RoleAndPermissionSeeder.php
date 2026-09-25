@@ -26,6 +26,7 @@ class RoleAndPermissionSeeder extends Seeder
             'allocate-stock',
             'dispatch-order',
             'adjust-stock',
+            'view-reports',
         ];
 
         foreach ($permissions as $perm) {
@@ -48,6 +49,7 @@ class RoleAndPermissionSeeder extends Seeder
             'create-sales-order',
             'allocate-stock',
             'adjust-stock',
+            'view-reports',
         ]);
 
         $operatorRole->syncPermissions([

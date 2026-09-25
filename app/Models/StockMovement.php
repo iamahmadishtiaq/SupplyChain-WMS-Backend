@@ -40,9 +40,14 @@ class StockMovement extends Model
         ];
     }
 
+    public function batch(): BelongsTo
+    {
+        return $this->belongsTo(StockBatch::class, 'stock_batch_id');
+    }
+
     public function stockBatch(): BelongsTo
     {
-        return $this->belongsTo(StockBatch::class);
+        return $this->belongsTo(StockBatch::class, 'stock_batch_id');
     }
 
     public function user(): BelongsTo
@@ -55,7 +60,7 @@ class StockMovement extends Model
         return $this->belongsTo(Location::class, 'source_location_id');
     }
 
-    public function destinantionLocation(): BelongsTo
+    public function destinationLocation(): BelongsTo
     {
         return $this->belongsTo(Location::class, 'destination_location_id');
     }

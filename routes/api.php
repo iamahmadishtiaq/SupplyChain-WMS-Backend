@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\SalesOrderController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\StockTransferController;
 use App\Http\Controllers\Api\StockAdjustmentController;
+use App\Http\Controllers\Api\ReportController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -41,6 +42,12 @@ ROute::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('permission:adjust-stock')->group(function () {
         Route::post('inventory/adjust', [StockAdjustmentController::class, 'store']);
+    });
+
+    Route::middleware('permission:view-reports')->prefix('reports')->group(function () {
+        Route::get('valuation', [ReportController::class, 'warehouseValuation']);
+        Route::get('audit-trail', [ReportController::class, 'auditTrail']);
+        Route::get('adjustments-summary', [ReportController::class, 'adjustmentsSummary']);
     });
 
     Route::post('logout', [AuthController::class, 'logout']);
